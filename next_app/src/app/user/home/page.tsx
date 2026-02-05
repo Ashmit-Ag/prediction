@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import BetCard from "@/components/user/BetCard";
+import { useBetsStore } from "@/store/betStore";
+
 
 type Option = {
   value: string;
@@ -19,7 +21,11 @@ type Bet = {
 };
 
 export default function BetsPage() {
-  const [bets, setBets] = useState<Bet[]>([]);
+
+  const bets = useBetsStore((s) => s.bets);
+  const fetched = useBetsStore((s) => s.fetched);
+  const setBets = useBetsStore((s) => s.setBets);
+
   const [selected, setSelected] = useState<{
     betId: string;
     option: string;
@@ -29,10 +35,13 @@ export default function BetsPage() {
 
 
   useEffect(() => {
+    if (fetched) return;
+
     fetch("/api/bets")
       .then((res) => res.json())
       .then(setBets);
-  }, []);
+  }, [fetched, setBets]);
+
 
   const handleSelect = (betId: string, option: string) => {
     setSelectedOptionMap((prev) => ({
