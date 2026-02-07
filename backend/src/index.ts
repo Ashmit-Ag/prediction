@@ -1,7 +1,13 @@
 import express from "express";
 import http from "http";
-import { Server } from "socket.io";
 import cors from "cors";
+import dotenv from "dotenv";
+import { Server } from "socket.io";
+
+import { initSocket } from "./socket";
+import { socketAuth } from "./auth";
+
+dotenv.config();
 
 const app = express();
 app.use(cors());
@@ -14,19 +20,14 @@ const io = new Server(server, {
   },
 });
 
-io.on("connection", (socket) => {
-  console.log("User connected:", socket.id);
+io.use(socketAuth);
 
-  socket.on("message", (msg) => {
-    console.log("Message:", msg);
-    io.emit("message", msg); // broadcast
-  });
+initSocket(io);
 
-  socket.on("disconnect", () => {
-    console.log("User disconnected:", socket.id);
-  });
+app.get("/", (_, res) => {
+  res.send("Bet socket server running");
 });
 
 server.listen(5000, () => {
-  console.log("Socket server running on port 5000");
+  console.log("🚀 Server running on port 5000");
 });

@@ -1,96 +1,124 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import BetCard from "@/components/user/BetCard";
 import { useBetsStore } from "@/store/betStore";
-
-
-type Option = {
-  value: string;
-  user_count: number;
-};
-
-type Bet = {
-  id: string;
-  question: string;
-  volume: number;
-  users: number;
-  start_date: string;
-  end_date: string;
-  options: Option[];
-};
+import { useSocket } from "@/hooks/useSocket";
+import { Socket } from "socket.io-client";
+import { useSession } from "next-auth/react";
+import { useUserBetsSocket } from "@/hooks/useUserBetsSocket";
 
 export default function BetsPage() {
+  const { data: session } = useSession();
+
+  const socket = useSocket(
+    "user",
+    session?.user?.id
+  );  
+  const socketRef = useRef<Socket | null>(null);
+
 
   const bets = useBetsStore((s) => s.bets);
-  const fetched = useBetsStore((s) => s.fetched);
-  const setBets = useBetsStore((s) => s.setBets);
 
   const [selected, setSelected] = useState<{
     betId: string;
     option: string;
   } | null>(null);
+
   const [amount, setAmount] = useState("");
-  const [selectedOptionMap, setSelectedOptionMap] = useState<Record<string, string>>({});
+  const [selectedOptionMap, setSelectedOptionMap] =
+    useState<Record<string, string>>({});
 
+  /* SOCKET LISTENERS */
+  useUserBetsSocket({
+    socket,
+    userId: session?.user?.id,
+    setSelectedOptionMap,
+  });
 
+  /* IMPORTANT FIX */
   useEffect(() => {
-    if (fetched) return;
+    if (socket) socketRef.current = socket;
+  }, [socket]);
 
-    fetch("/api/bets")
-      .then((res) => res.json())
-      .then(setBets);
-  }, [fetched, setBets]);
-
-
+  /* SELECT OPTION */
   const handleSelect = (betId: string, option: string) => {
-    setSelectedOptionMap((prev) => ({
-      ...prev,
-      [betId]: option,
-    }));
-  
-    setSelected({ betId, option }); // for modal
-  };
-  
+    if (selectedOptionMap[betId]) {
+      alert("You already placed a bet on this.");
+      return;
+    }
 
-  const closeModal = () => {
+    // ONLY open modal — do NOT mark selected yet
+    setSelected({ betId, option });
+  };
+
+
+  /* PLACE BET */
+  const placeBet = () => {
+    if (!selected || !amount || !socketRef.current) return;
+
+    socketRef.current.emit("bet:place", {
+      betId: selected.betId,
+      option: selected.option,
+      amount: Number(amount) || 0,
+      userId: "user-" + session?.user.id,
+    });
+
+    // mark selected ONLY after confirm
+    setSelectedOptionMap(prev => ({
+      ...prev,
+      [selected.betId]: selected.option,
+    }));
+
     setSelected(null);
     setAmount("");
   };
 
-  const placeBet = async () => {
-    console.log(selected, amount);
-    closeModal();
+
+  /* REFUND BET */
+  const refundBet = (betId: string) => {
+    if (!socketRef.current) return;
+
+    if (!confirm("Cancel this bet? Money will be refunded.")) return;
+
+    socketRef.current.emit("bet:refund", {
+      betId,
+      userId: "user-" + session?.user.id,
+    });
+
+    setSelectedOptionMap((prev) => {
+      const copy = { ...prev };
+      delete copy[betId];
+      return copy;
+    });
   };
 
   return (
     <div className="h-screen flex flex-col text-white">
-      
-      <div className="bg-zinc-900/90 backdrop-blur px-6 pt-5 pb-4 border-b border-zinc-800">
-        <h1 className="text-3xl text-center font-bold bg-linear-to-r from-purple-400 to-pink-500 bg-clip-text text-transparent">
-            Active Bets
+      <div className="bg-zinc-900 px-6 py-5 border-b border-zinc-800">
+        <h1 className="text-3xl text-center font-bold">
+          Active Bets
         </h1>
       </div>
 
-      {/* Scrollable cards container */}
-      <div className="flex-1 overflow-y-auto scrollbar-neon px-6 pt-8 pb-28 space-y-6">
+      <div className="flex-1 overflow-y-auto px-6 pt-8 pb-28 space-y-6">
         {bets.map((bet) => (
           <BetCard
             key={bet.id}
             bet={bet}
             selectedOption={selectedOptionMap[bet.id]}
             onSelect={handleSelect}
+            onRefund={() => refundBet(bet.id)}
           />
         ))}
       </div>
 
-      {/* Modal */}
       {selected && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
           <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-6 w-full max-w-sm">
             <h3 className="text-lg font-semibold mb-4">
-              Place Bet —
-              <span className="text-pink-400 ml-1">
+              Place Bet —{" "}
+              <span className="text-pink-400">
                 {selected.option}
               </span>
             </h3>
@@ -100,23 +128,25 @@ export default function BetsPage() {
               placeholder="Enter amount ($)"
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
-              className="w-full mb-4 px-4 py-2 rounded-lg bg-zinc-800 border border-zinc-700 focus:outline-none focus:border-pink-500"
+              className="w-full mb-4 px-4 py-2 rounded-lg bg-zinc-800 border border-zinc-700"
             />
 
             <div className="flex gap-3">
               <button
-                onClick={closeModal}
-                className="flex-1 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700"
+                onClick={() => setSelected(null)}
+                className="flex-1 py-2 rounded-lg bg-zinc-800"
               >
                 Cancel
               </button>
 
               <button
+                disabled={!amount || Number(amount) <= 0}
                 onClick={placeBet}
-                className="flex-1 py-2 rounded-lg bg-linear-to-r from-purple-500 to-pink-500 font-semibold"
+                className="flex-1 py-2 rounded-lg bg-purple-600 font-semibold disabled:opacity-50"
               >
                 Confirm
               </button>
+
             </div>
           </div>
         </div>

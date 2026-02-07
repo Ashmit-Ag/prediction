@@ -1,0 +1,97 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+datasource db {
+  provider = "postgresql"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+
+enum PaymentStatus {
+  PENDING
+  CONFIRMED
+  FAILED
+}
+
+enum AdminRole {
+  ADMIN
+  MANAGER
+}
+
+enum VoteStatus {
+  PENDING
+  WON
+  LOST
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  name      String
+  phone     Int
+  password  String
+
+  // Voting relation
+  votes     Vote[]
+
+  // Crypto payment related
+  walletAddress   String?   @unique
+  walletNetwork   String? 
+  payments        CryptoPayment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model CryptoPayment {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+
+  txHash    String   @unique
+  currency  String   // BTC, ETH, USDT etc.
+  network   String   // Ethereum, Tron, Bitcoin etc.
+  amount    Float
+  status    PaymentStatus @default(PENDING) //PENGDING, CONFIRMED, FAILED
+
+  createdAt DateTime @default(now())
+}
+
+model Admin {
+  id     String  @id @default(uuid())
+  email  String  @unique
+  password String
+  role AdminRole  //ADMIN, MANAGER
+}
+
+model BetBackup {
+  id             String   @id
+  question       String
+  volume         Float
+  users          Int
+  start_date     DateTime
+  end_date       DateTime
+  created_at     DateTime
+  correct_option String?
+  winners        String[]
+  options        Json
+  backedUpAt     DateTime @default(now())
+}
+
+model Vote {
+  id        String @id @default(uuid())
+  userId    String
+  betId     String
+  option    String
+  amount    Float
+  risk      Float
+  status    VoteStatus //  PENDING, WON, LOST
+
+  user User @relation(fields: [userId], references: [id])
+}
