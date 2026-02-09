@@ -25,6 +25,7 @@ export default function EditBetModal({
 
         <h2>Edit Bet</h2>
 
+        <label>Bet</label>
         <input
           value={bet.question}
           onChange={(e) =>
@@ -35,7 +36,7 @@ export default function EditBetModal({
           }
           className="w-full px-3 py-2 bg-zinc-800 rounded"
         />
-
+        <label>Volume in $</label>
         <input
           type="number"
           value={bet.test_volume}
