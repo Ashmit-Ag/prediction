@@ -61,102 +61,100 @@ export function initSocket(io: Server) {
     });
 
     /* ================= USER VOTE ================= */
-    socket.on("bet:place", async ({ betId, option, amount, userId }) => {
+    socket.on("bet:place", async ({ betId, option, amount }) => {
       try {
-        console.log(
-          "🧾 Vote attempt:",
-          { betId, option, amount, userId }
-        );
-
-        const raw = await redis.get(`bet:${betId}`);
-        if (!raw) {
-          console.warn("⚠️ Bet not found:", betId);
+        const userId = socket.handshake.auth.userId;
+    
+        console.log("🧾 Vote attempt:", {
+          betId,
+          option,
+          amount,
+          userId,
+        });
+    
+        if (!userId) {
+          console.warn("❌ Missing userId in socket auth");
           return;
         }
-
+    
+        const raw = await redis.get(`bet:${betId}`);
+        if (!raw) return;
+    
         const bet = JSON.parse(raw);
-
-        // prevent double voting
+    
         if (!bet.votes) bet.votes = {};
+    
+        // prevent duplicate vote
         if (bet.votes[userId]) {
           console.warn("⚠️ Duplicate vote blocked:", userId);
           return;
         }
-
+    
         bet.votes[userId] = { option, amount };
-
-        bet.real_users = (bet.real_users || 0) + 1;
-        bet.real_volume = (bet.real_volume || 0) + amount;
-
-        const opt = bet.options.find((o: any) => o.value === option);
-        if (opt) {
-          opt.real_count = (opt.real_count || 0) + 1;
-        }
-
-        await redis.set(`bet:${betId}`, JSON.stringify(bet));
-
-        console.log("📊 Vote recorded:", {
-          betId,
-          totalUsers: bet.real_users,
-          totalVolume: bet.real_volume,
+    
+        // safer totals
+        bet.real_users = Object.keys(bet.votes).length;
+        bet.real_volume = Object.values(bet.votes)
+          .reduce((s, v:any) => s + v.amount, 0);
+    
+        bet.options.forEach((opt:any) => {
+          opt.real_count = Object.values(bet.votes)
+            .filter((v:any) => v.option === opt.value)
+            .length;
         });
-
+    
+        await redis.set(`bet:${betId}`, JSON.stringify(bet));
+    
         io.emit("bet:update", bet);
+    
       } catch (err) {
         console.error("❌ Vote error:", err);
       }
     });
-
+    
     /* ================= REFUND BET ================= */
-    socket.on("bet:refund", async ({ betId, userId }) => {
+    socket.on("bet:refund", async ({ betId }) => {
       try {
+        const userId = socket.handshake.auth.userId;
+    
         console.log("💸 Refund attempt:", { betId, userId });
-
+    
+        if (!userId) return;
+    
         const raw = await redis.get(`bet:${betId}`);
-        if (!raw) {
-          console.warn("⚠️ Bet not found for refund:", betId);
-          return;
-        }
-
+        if (!raw) return;
+    
         const bet = JSON.parse(raw);
-
-        if (!bet.votes || !bet.votes[userId]) {
-          console.warn("⚠️ No existing vote for refund:", userId);
+    
+        if (!bet.votes?.[userId]) {
+          console.warn("⚠️ No vote found");
           return;
         }
-
-        const vote = bet.votes[userId];
-        const { option, amount } = vote;
-
-        // Remove vote record
+    
         delete bet.votes[userId];
-
-        // Adjust totals safely
-        bet.real_users = Math.max(0, (bet.real_users || 1) - 1);
-        bet.real_volume = Math.max(0, (bet.real_volume || amount) - amount);
-
-        // Adjust option count
-        const opt = bet.options.find((o: any) => o.value === option);
-        if (opt) {
-          opt.real_count = Math.max(0, (opt.real_count || 1) - 1);
-        }
-
-        // Save updated bet
-        await redis.set(`bet:${betId}`, JSON.stringify(bet));
-
-        console.log("✅ Refund processed:", {
-          betId,
-          userId,
-          newUsers: bet.real_users,
-          newVolume: bet.real_volume,
+    
+        // recompute totals
+        bet.real_users = Object.keys(bet.votes).length;
+        bet.real_volume = Object.values(bet.votes)
+          .reduce((s, v:any) => s + v.amount, 0);
+    
+        bet.options.forEach((opt:any) => {
+          opt.real_count = Object.values(bet.votes)
+            .filter((v:any) => v.option === opt.value)
+            .length;
         });
-
-        // Broadcast updated bet
+    
+        await redis.set(`bet:${betId}`, JSON.stringify(bet));
+    
+        console.log("✅ Refund processed:", betId);
+    
         io.emit("bet:update", bet);
+    
       } catch (err) {
         console.error("❌ Refund error:", err);
       }
     });
+    
 
 
     /* ================= ADMIN UPDATE ================= */
